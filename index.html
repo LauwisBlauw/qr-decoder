@@ -314,8 +314,14 @@
                 document.getElementById('status').textContent = 'Scanning... Point at a QR code';
 
             } catch (err) {
+                let msg = err.message || 'Unknown error';
+                if (location.protocol === 'file:') {
+                    msg = 'Camera requires HTTPS. Open via GitHub Pages URL instead.';
+                } else if (msg.includes('NotAllowedError') || msg.includes('Permission')) {
+                    msg = 'Camera permission denied. Please allow camera access.';
+                }
                 document.getElementById('status').innerHTML =
-                    '<span class="error">Camera error: ' + err.message + '</span>';
+                    '<span class="error">' + msg + '</span>';
             }
         }
 
