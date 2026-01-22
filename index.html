@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>QR Decoder</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 15px;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        h1 {
+            text-align: center;
+            color: #00d4ff;
+            font-size: 1.5em;
+            margin: 10px 0;
+        }
+        .container {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 14px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #333;
+            border-radius: 5px;
+            background: #0f0f23;
+            color: #fff;
+            font-size: 16px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #00d4ff;
+            color: #000;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #00a8cc;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .btn-row button {
+            flex: 1;
+        }
+        .btn-stop {
+            background: #dc3545;
+        }
+        .btn-stop:hover {
+            background: #c82333;
+        }
+        #reader {
+            width: 100%;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        #reader video {
+            border-radius: 10px;
+        }
+        .result-box {
+            background: #0f0f23;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 18px;
+            min-height: 60px;
+            word-break: break-all;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .error {
+            color: #ff6b6b;
+        }
+        .success {
+            color: #51cf66;
+        }
+        .status {
+            text-align: center;
+            padding: 10px;
+            color: #888;
+            font-size: 14px;
+        }
+        .timer {
+            color: #ffa500;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+        #qr-shaded-region {
+            border-width: 50px !important;
+        }
+        .password-row {
+            display: flex;
+            gap: 10px;
+        }
+        .password-row input {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        .password-row button {
+            width: auto;
+            padding: 12px 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>QR Decoder</h1>
+
+    <div class="container">
+        <div id="reader"></div>
+        <div class="btn-row" style="margin-top: 10px;">
+            <button id="startBtn" onclick="startScanner()">Start Camera</button>
+            <button id="stopBtn" class="btn-stop hidden" onclick="stopScanner()">Stop</button>
+        </div>
+        <div id="status" class="status">Tap "Start Camera" to scan a QR code</div>
+    </div>
+
+    <div id="decrypt-section" class="container hidden">
+        <label>Password</label>
+        <div class="password-row">
+            <input type="password" id="password" placeholder="Enter password">
+            <button onclick="togglePassword()" id="togglePwBtn">Show</button>
+        </div>
+        <button onclick="doDecrypt()" style="margin-top: 10px;">Decrypt</button>
+    </div>
+
+    <div id="result-section" class="container hidden">
+        <label>Decrypted Numbers</label>
+        <div id="result" class="result-box"></div>
+        <div id="timer" class="timer hidden"></div>
+        <button onclick="clearResult()" style="margin-top: 10px; background: #dc3545;">Clear</button>
+    </div>
+
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script>
+        // === Constants ===
+        const SALT_LEN = 16;
+        const IV_LEN = 12;
+        const ITERATIONS = 200000;
+        const AUTO_CLEAR_SECONDS = 60;
+
+        let html5QrCode = null;
+        let currentQrData = null;
+        let autoClearTimer = null;
+        let countdownInterval = null;
+
+        // === Base91 Decoder ===
+        const BASE91_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&()*+,./:;<=>?@[]^_`{|}~"';
+
+        function base91Decode(str) {
+            const lookup = {};
+            for (let i = 0; i < BASE91_ALPHABET.length; i++) {
+                lookup[BASE91_ALPHABET[i]] = i;
+            }
+
+            const result = [];
+            let n = 0;
+            let bits = 0;
+            let v = -1;
+
+            for (let i = 0; i < str.length; i++) {
+                const c = lookup[str[i]];
+                if (c === undefined) continue;
+
+                if (v < 0) {
+                    v = c;
+                } else {
+                    v += c * 91;
+                    n |= v << bits;
+                    bits += (v & 8191) > 88 ? 13 : 14;
+
+                    while (bits >= 8) {
+                        result.push(n & 255);
+                        n >>= 8;
+                        bits -= 8;
+                    }
+                    v = -1;
+                }
+            }
+
+            if (v >= 0) {
+                result.push((n | (v << bits)) & 255);
+            }
+
+            return new Uint8Array(result);
+        }
+
+        // === 11-bit unpacking ===
+        function unpack11bit(data, count) {
+            const bits = [];
+            for (const byte of data) {
+                for (let i = 7; i >= 0; i--) {
+                    bits.push((byte >> i) & 1);
+                }
+            }
+
+            const numbers = [];
+            for (let i = 0; i < count; i++) {
+                let n = 0;
+                for (let j = 0; j < 11; j++) {
+                    n = (n << 1) | bits[i * 11 + j];
+                }
+                numbers.push(n);
+            }
+
+            return numbers;
+        }
+
+        // === Key derivation ===
+        async function deriveKey(password, salt) {
+            const enc = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey(
+                'raw',
+                enc.encode(password),
+                'PBKDF2',
+                false,
+                ['deriveBits', 'deriveKey']
+            );
+
+            return crypto.subtle.deriveKey(
+                {
+                    name: 'PBKDF2',
+                    salt: salt,
+                    iterations: ITERATIONS,
+                    hash: 'SHA-256'
+                },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['decrypt']
+            );
+        }
+
+        // === Decrypt ===
+        async function decrypt(encoded, password) {
+            const raw = base91Decode(encoded);
+
+            const salt = raw.slice(0, SALT_LEN);
+            const iv = raw.slice(SALT_LEN, SALT_LEN + IV_LEN);
+            const ciphertext = raw.slice(SALT_LEN + IV_LEN);
+
+            const key = await deriveKey(password, salt);
+
+            const decrypted = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: iv },
+                key,
+                ciphertext
+            );
+
+            const data = new Uint8Array(decrypted);
+            const count = data[0];
+            const indices = unpack11bit(data.slice(1), count);
+
+            return indices.map(idx => idx + 1);
+        }
+
+        // === Scanner ===
+        async function startScanner() {
+            try {
+                html5QrCode = new Html5Qrcode("reader");
+
+                const config = {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 },
+                    aspectRatio: 1.0
+                };
+
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    onScanSuccess,
+                    onScanFailure
+                );
+
+                document.getElementById('startBtn').classList.add('hidden');
+                document.getElementById('stopBtn').classList.remove('hidden');
+                document.getElementById('status').textContent = 'Scanning... Point at a QR code';
+
+            } catch (err) {
+                document.getElementById('status').innerHTML =
+                    '<span class="error">Camera error: ' + err.message + '</span>';
+            }
+        }
+
+        async function stopScanner() {
+            if (html5QrCode) {
+                await html5QrCode.stop();
+                html5QrCode.clear();
+                html5QrCode = null;
+            }
+            document.getElementById('startBtn').classList.remove('hidden');
+            document.getElementById('stopBtn').classList.add('hidden');
+            document.getElementById('status').textContent = 'Camera stopped';
+        }
+
+        function onScanSuccess(decodedText) {
+            currentQrData = decodedText;
+            document.getElementById('status').innerHTML =
+                '<span class="success">QR Code detected! Enter password to decrypt.</span>';
+            document.getElementById('decrypt-section').classList.remove('hidden');
+
+            // Auto-stop camera after successful scan
+            stopScanner();
+        }
+
+        function onScanFailure(error) {
+            // Ignore scan failures (no QR in frame)
+        }
+
+        // === Decrypt UI ===
+        async function doDecrypt() {
+            if (!currentQrData) {
+                alert('Please scan a QR code first');
+                return;
+            }
+
+            const password = document.getElementById('password').value;
+            if (!password) {
+                alert('Please enter a password');
+                return;
+            }
+
+            try {
+                const numbers = await decrypt(currentQrData, password);
+
+                document.getElementById('result').innerHTML =
+                    '<span class="success">' + numbers.join(', ') + '</span>';
+                document.getElementById('result-section').classList.remove('hidden');
+
+                // Clear password immediately
+                document.getElementById('password').value = '';
+
+                // Start auto-clear countdown
+                startAutoClear();
+
+            } catch (e) {
+                document.getElementById('result').innerHTML =
+                    '<span class="error">Decryption failed - invalid password or corrupted data</span>';
+                document.getElementById('result-section').classList.remove('hidden');
+                document.getElementById('timer').classList.add('hidden');
+            }
+        }
+
+        function togglePassword() {
+            const input = document.getElementById('password');
+            const btn = document.getElementById('togglePwBtn');
+            if (input.type === 'password') {
+                input.type = 'text';
+                btn.textContent = 'Hide';
+            } else {
+                input.type = 'password';
+                btn.textContent = 'Show';
+            }
+        }
+
+        // === Security: Auto-clear ===
+        function startAutoClear() {
+            clearTimers();
+
+            let remaining = AUTO_CLEAR_SECONDS;
+            const timerEl = document.getElementById('timer');
+            timerEl.classList.remove('hidden');
+            timerEl.textContent = `Auto-clearing in ${remaining}s`;
+
+            countdownInterval = setInterval(() => {
+                remaining--;
+                timerEl.textContent = `Auto-clearing in ${remaining}s`;
+                if (remaining <= 0) {
+                    clearResult();
+                }
+            }, 1000);
+        }
+
+        function clearTimers() {
+            if (autoClearTimer) {
+                clearTimeout(autoClearTimer);
+                autoClearTimer = null;
+            }
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+        }
+
+        function clearResult() {
+            clearTimers();
+
+            currentQrData = null;
+            document.getElementById('result').textContent = '';
+            document.getElementById('result-section').classList.add('hidden');
+            document.getElementById('decrypt-section').classList.add('hidden');
+            document.getElementById('timer').classList.add('hidden');
+            document.getElementById('password').value = '';
+            document.getElementById('status').textContent = 'Cleared. Tap "Start Camera" to scan again.';
+        }
+
+        // Prevent copy/paste
+        document.addEventListener('copy', e => e.preventDefault());
+        document.addEventListener('cut', e => e.preventDefault());
+    </script>
+</body>
+</html>
