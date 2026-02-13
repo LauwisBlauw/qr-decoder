@@ -109,9 +109,10 @@
             text-align: center;
             padding: 15px;
         }
-        #qr-output canvas {
+        #qr-output img, #qr-output canvas {
             border-radius: 4px;
             max-width: 100%;
+            image-rendering: pixelated;
         }
         .count-display {
             text-align: center;
@@ -155,7 +156,7 @@
         <a href="decoder.html">> open_decoder.sh</a>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script>
         // === Shared secret key (raw 256-bit key bytes) ===
         const SECRET_KEY = new Uint8Array([
@@ -261,14 +262,39 @@
             const encoded = await encodeContent(input);
 
             try {
-                new QRCode(qrOutput, {
-                    text: encoded,
-                    width: 300,
-                    height: 300,
-                    colorDark: '#00ff41',
-                    colorLight: '#0a0a0a',
-                    correctLevel: QRCode.CorrectLevel.M
-                });
+                const qr = qrcode(0, 'M');
+                qr.addData(encoded);
+                qr.make();
+
+                const moduleCount = qr.getModuleCount();
+                const moduleSize = 10;
+                const margin = 4;
+                const size = (moduleCount + margin * 2) * moduleSize;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = '#0a0a0a';
+                ctx.fillRect(0, 0, size, size);
+
+                ctx.fillStyle = '#00ff41';
+                for (let row = 0; row < moduleCount; row++) {
+                    for (let col = 0; col < moduleCount; col++) {
+                        if (qr.isDark(row, col)) {
+                            ctx.fillRect(
+                                (col + margin) * moduleSize,
+                                (row + margin) * moduleSize,
+                                moduleSize, moduleSize
+                            );
+                        }
+                    }
+                }
+
+                const img = document.createElement('img');
+                img.src = canvas.toDataURL('image/png');
+                qrOutput.appendChild(img);
             } catch (err) {
                 qrOutput.innerHTML = '';
                 errorMsg.innerHTML = '<span class="error">[ERR] QR generation failed: ' + err.message + '</span>';
