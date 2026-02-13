@@ -149,6 +149,7 @@
         <div id="count-display" class="count-display"></div>
         <div id="qr-output"></div>
         <div id="error-msg"></div>
+        <button id="download-btn" class="hidden" onclick="downloadPNG()" style="margin-top: 10px; background: #005f1a; color: #00ff41;">[ Download PNG ]</button>
         <button class="btn-clear" onclick="clearAll()">[ Clear ]</button>
     </div>
 
@@ -276,10 +277,10 @@
                 canvas.height = size;
                 const ctx = canvas.getContext('2d');
 
-                ctx.fillStyle = '#0a0a0a';
+                ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, size, size);
 
-                ctx.fillStyle = '#00ff41';
+                ctx.fillStyle = '#000000';
                 for (let row = 0; row < moduleCount; row++) {
                     for (let col = 0; col < moduleCount; col++) {
                         if (qr.isDark(row, col)) {
@@ -292,9 +293,11 @@
                     }
                 }
 
+                window.currentQRPng = canvas.toDataURL('image/png');
                 const img = document.createElement('img');
-                img.src = canvas.toDataURL('image/png');
+                img.src = window.currentQRPng;
                 qrOutput.appendChild(img);
+                document.getElementById('download-btn').classList.remove('hidden');
             } catch (err) {
                 qrOutput.innerHTML = '';
                 errorMsg.innerHTML = '<span class="error">[ERR] QR generation failed: ' + err.message + '</span>';
@@ -304,12 +307,25 @@
             resultSection.classList.remove('hidden');
         }
 
+        // === Download PNG ===
+        function downloadPNG() {
+            if (!window.currentQRPng) return;
+            const link = document.createElement('a');
+            link.download = 'qr-code.png';
+            link.href = window.currentQRPng;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
         // === Clear ===
         function clearAll() {
             document.getElementById('content').value = '';
             document.getElementById('qr-output').innerHTML = '';
             document.getElementById('error-msg').innerHTML = '';
             document.getElementById('result-section').classList.add('hidden');
+            document.getElementById('download-btn').classList.add('hidden');
+            window.currentQRPng = null;
             updateCounter();
         }
     </script>
