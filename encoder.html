@@ -155,7 +155,7 @@
         <a href="decoder.html">> open_decoder.sh</a>
     </div>
 
-    <script src="https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
         // === Shared secret key (raw 256-bit key bytes) ===
         const SECRET_KEY = new Uint8Array([
@@ -260,23 +260,19 @@
 
             const encoded = await encodeContent(input);
 
-            const canvas = document.createElement('canvas');
-            qrOutput.appendChild(canvas);
-
-            QRCode.toCanvas(canvas, encoded, {
-                width: 300,
-                margin: 2,
-                color: {
-                    dark: '#00ff41',
-                    light: '#0a0a0a'
-                },
-                errorCorrectionLevel: 'M'
-            }, function(error) {
-                if (error) {
-                    qrOutput.innerHTML = '';
-                    errorMsg.innerHTML = '<span class="error">[ERR] QR generation failed: ' + error.message + '</span>';
-                }
-            });
+            try {
+                new QRCode(qrOutput, {
+                    text: encoded,
+                    width: 300,
+                    height: 300,
+                    colorDark: '#00ff41',
+                    colorLight: '#0a0a0a',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            } catch (err) {
+                qrOutput.innerHTML = '';
+                errorMsg.innerHTML = '<span class="error">[ERR] QR generation failed: ' + err.message + '</span>';
+            }
 
             countDisplay.textContent = '[ ' + input.length + ' char' + (input.length !== 1 ? 's' : '') + ' encoded ]';
             resultSection.classList.remove('hidden');
