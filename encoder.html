@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>QR Encoder</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 15px;
+            background: #0a0a0a;
+            color: #00ff41;
+            min-height: 100vh;
+        }
+        h1 {
+            text-align: center;
+            color: #00ff41;
+            font-size: 1.5em;
+            margin: 10px 0;
+            text-shadow: 0 0 10px #00ff41, 0 0 20px #00ff4180;
+            letter-spacing: 3px;
+        }
+        .container {
+            background: #0d0d0d;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border: 1px solid #00ff4133;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #00aa2a;
+            font-size: 14px;
+        }
+        textarea {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #00ff4133;
+            border-radius: 3px;
+            background: #050505;
+            color: #00ff41;
+            font-size: 18px;
+            font-family: 'Courier New', Courier, monospace;
+            resize: vertical;
+            min-height: 120px;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #00ff41;
+            box-shadow: 0 0 8px #00ff4140;
+        }
+        textarea::placeholder {
+            color: #00ff4140;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #00ff41;
+            color: #0a0a0a;
+            border: none;
+            border-radius: 3px;
+            font-size: 16px;
+            font-weight: bold;
+            font-family: 'Courier New', Courier, monospace;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        button:hover {
+            background: #00cc33;
+            box-shadow: 0 0 15px #00ff4160;
+        }
+        button:disabled {
+            background: #1a1a1a;
+            color: #333;
+            cursor: not-allowed;
+        }
+        .btn-clear {
+            background: #ff0033;
+            color: #fff;
+            margin-top: 10px;
+        }
+        .btn-clear:hover {
+            background: #cc0029;
+            box-shadow: 0 0 15px #ff003360;
+        }
+        .error {
+            color: #ff0033;
+        }
+        .success {
+            color: #00ff41;
+        }
+        .info {
+            color: #00773a;
+            font-size: 13px;
+            margin-top: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+        #qr-output {
+            text-align: center;
+            padding: 15px;
+        }
+        #qr-output canvas {
+            border-radius: 4px;
+            max-width: 100%;
+        }
+        .count-display {
+            text-align: center;
+            color: #00ff41;
+            font-size: 14px;
+            margin-bottom: 10px;
+            text-shadow: 0 0 5px #00ff4180;
+        }
+        .nav-link {
+            text-align: center;
+            margin-top: 10px;
+        }
+        .nav-link a {
+            color: #00ff41;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .nav-link a:hover {
+            text-shadow: 0 0 8px #00ff41;
+        }
+    </style>
+</head>
+<body>
+    <h1>> QR Encoder_</h1>
+
+    <div class="container">
+        <label>> Enter content (max 300 characters)</label>
+        <textarea id="content" maxlength="300" placeholder="Type anything here..." oninput="updateCounter()"></textarea>
+        <div class="info"><span id="char-count">0</span> / 300</div>
+        <button onclick="generateQR()" style="margin-top: 10px;">[ Generate QR ]</button>
+    </div>
+
+    <div id="result-section" class="container hidden">
+        <div id="count-display" class="count-display"></div>
+        <div id="qr-output"></div>
+        <div id="error-msg"></div>
+        <button class="btn-clear" onclick="clearAll()">[ Clear ]</button>
+    </div>
+
+    <div class="nav-link">
+        <a href="decoder.html">> open_decoder.sh</a>
+    </div>
+
+    <script src="https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js"></script>
+    <script>
+        // === Shared secret key (raw 256-bit key bytes) ===
+        const SECRET_KEY = new Uint8Array([
+            0x4a,0xf7,0x2c,0x91,0xb3,0x08,0xe5,0xd6,
+            0x1f,0x83,0xa4,0x5b,0xc9,0x72,0x0e,0xd1,
+            0x6c,0xf0,0x38,0xa7,0x55,0xe2,0x9d,0x14,
+            0xbb,0x60,0xc8,0x3f,0x76,0x01,0xda,0x49
+        ]);
+        const IV_LEN = 12;
+
+        async function getKey() {
+            return crypto.subtle.importKey(
+                'raw', SECRET_KEY, { name: 'AES-GCM' }, false, ['encrypt']
+            );
+        }
+
+        // === Base91 Encoder ===
+        const BASE91_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&()*+,./:;<=>?@[]^_`{|}~"';
+
+        function base91Encode(data) {
+            let n = 0;
+            let bits = 0;
+            let result = '';
+
+            for (let i = 0; i < data.length; i++) {
+                n |= data[i] << bits;
+                bits += 8;
+
+                if (bits > 13) {
+                    let v = n & 8191;
+                    if (v > 88) {
+                        n >>= 13;
+                        bits -= 13;
+                    } else {
+                        v = n & 16383;
+                        n >>= 14;
+                        bits -= 14;
+                    }
+                    result += BASE91_ALPHABET[v % 91] + BASE91_ALPHABET[Math.floor(v / 91)];
+                }
+            }
+
+            if (bits > 0) {
+                result += BASE91_ALPHABET[n % 91];
+                if (bits > 7 || n > 90) {
+                    result += BASE91_ALPHABET[Math.floor(n / 91)];
+                }
+            }
+
+            return result;
+        }
+
+        // === Encrypt + encode content to QR string ===
+        async function encodeContent(text) {
+            const plaintext = new TextEncoder().encode(text);
+
+            const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
+            const key = await getKey();
+
+            const ciphertext = await crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv: iv },
+                key,
+                plaintext
+            );
+
+            // Format: [IV (12 bytes)][Ciphertext]
+            const payload = new Uint8Array(IV_LEN + ciphertext.byteLength);
+            payload.set(iv, 0);
+            payload.set(new Uint8Array(ciphertext), IV_LEN);
+
+            return base91Encode(payload);
+        }
+
+        // === Character counter ===
+        function updateCounter() {
+            const len = document.getElementById('content').value.length;
+            document.getElementById('char-count').textContent = len;
+        }
+
+        // === Generate QR Code ===
+        async function generateQR() {
+            const input = document.getElementById('content').value;
+            const errorMsg = document.getElementById('error-msg');
+            const qrOutput = document.getElementById('qr-output');
+            const resultSection = document.getElementById('result-section');
+            const countDisplay = document.getElementById('count-display');
+
+            qrOutput.innerHTML = '';
+            errorMsg.innerHTML = '';
+
+            if (!input.trim()) {
+                errorMsg.innerHTML = '<span class="error">[ERR] No input provided</span>';
+                resultSection.classList.remove('hidden');
+                return;
+            }
+
+            if (input.length > 300) {
+                errorMsg.innerHTML = '<span class="error">[ERR] Exceeds 300 character limit</span>';
+                resultSection.classList.remove('hidden');
+                return;
+            }
+
+            const encoded = await encodeContent(input);
+
+            const canvas = document.createElement('canvas');
+            qrOutput.appendChild(canvas);
+
+            QRCode.toCanvas(canvas, encoded, {
+                width: 300,
+                margin: 2,
+                color: {
+                    dark: '#00ff41',
+                    light: '#0a0a0a'
+                },
+                errorCorrectionLevel: 'M'
+            }, function(error) {
+                if (error) {
+                    qrOutput.innerHTML = '';
+                    errorMsg.innerHTML = '<span class="error">[ERR] QR generation failed: ' + error.message + '</span>';
+                }
+            });
+
+            countDisplay.textContent = '[ ' + input.length + ' char' + (input.length !== 1 ? 's' : '') + ' encoded ]';
+            resultSection.classList.remove('hidden');
+        }
+
+        // === Clear ===
+        function clearAll() {
+            document.getElementById('content').value = '';
+            document.getElementById('qr-output').innerHTML = '';
+            document.getElementById('error-msg').innerHTML = '';
+            document.getElementById('result-section').classList.add('hidden');
+            updateCounter();
+        }
+    </script>
+</body>
+</html>
