@@ -157,7 +157,9 @@
         <a href="decoder.html">> open_decoder.sh</a>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"
+            integrity="sha384-lQXOAyZwHXE55JFyrOMB7nY2Wv+m5ZWNtJcHrd1rceRQXAYNLak8ukN5TjBTcIwz"
+            crossorigin="anonymous"></script>
     <script>
         // === Shared secret key (raw 256-bit key bytes) ===
         const SECRET_KEY = new Uint8Array([
@@ -260,9 +262,9 @@
                 return;
             }
 
-            const encoded = await encodeContent(input);
-
             try {
+                const encoded = await encodeContent(input);
+
                 const qr = qrcode(0, 'M');
                 qr.addData(encoded);
                 qr.make();
@@ -300,7 +302,7 @@
                 document.getElementById('download-btn').classList.remove('hidden');
             } catch (err) {
                 qrOutput.innerHTML = '';
-                errorMsg.innerHTML = '<span class="error">[ERR] QR generation failed: ' + err.message + '</span>';
+                errorMsg.innerHTML = '<span class="error">[ERR] Encoding failed: ' + err.message + '</span>';
             }
 
             countDisplay.textContent = '[ ' + input.length + ' char' + (input.length !== 1 ? 's' : '') + ' encoded ]';

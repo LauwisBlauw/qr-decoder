@@ -162,7 +162,9 @@
         <a href="encoder.html">> open_encoder.sh</a>
     </div>
 
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"
+            integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+"
+            crossorigin="anonymous"></script>
     <script>
         // === Constants ===
         const AUTO_CLEAR_SECONDS = 60;
@@ -183,7 +185,6 @@
         }
 
         let html5QrCode = null;
-        let autoClearTimer = null;
         let countdownInterval = null;
 
         // === Base91 Decoder ===
@@ -285,8 +286,12 @@
 
         async function stopScanner() {
             if (html5QrCode) {
-                await html5QrCode.stop();
-                html5QrCode.clear();
+                try {
+                    await html5QrCode.stop();
+                    html5QrCode.clear();
+                } catch (e) {
+                    // Camera already stopped or torn down; nothing to recover
+                }
                 html5QrCode = null;
             }
             document.getElementById('startBtn').classList.remove('hidden');
@@ -295,8 +300,8 @@
         }
 
         async function onScanSuccess(decodedText) {
-            // Auto-stop camera
-            stopScanner();
+            // Auto-stop camera before decoding, so no further frames arrive
+            await stopScanner();
 
             try {
                 const text = await decode(decodedText);
@@ -342,10 +347,6 @@
         }
 
         function clearTimers() {
-            if (autoClearTimer) {
-                clearTimeout(autoClearTimer);
-                autoClearTimer = null;
-            }
             if (countdownInterval) {
                 clearInterval(countdownInterval);
                 countdownInterval = null;
